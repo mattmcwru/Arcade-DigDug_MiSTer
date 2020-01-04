@@ -27,6 +27,7 @@ module sys_top
 	input         FPGA_CLK3_50,
 
 	//////////// HDMI //////////
+`ifdef HDMI_ENABLE
 	output        HDMI_I2C_SCL,
 	inout         HDMI_I2C_SDA,
 
@@ -42,6 +43,7 @@ module sys_top
 	output        HDMI_TX_VS,
 	
 	input         HDMI_TX_INT,
+`endif
 
 	//////////// SDR ///////////
 	output [12:0] SDRAM_A,
@@ -69,18 +71,31 @@ module sys_top
 
 `else
 	//////////// VGA ///////////
-	output  [5:0] VGA_R,
-	output  [5:0] VGA_G,
-	output  [5:0] VGA_B,
+	output  [7:0] VGA_R,
+	output  [7:0] VGA_G,
+	output  [7:0] VGA_B,
 	inout         VGA_HS,  // VGA_HS is secondary SD card detect when VGA_EN = 1 (inactive)
 	output		  VGA_VS,
-	input         VGA_EN,  // active low
+//	input         VGA_EN,  // active low
+	output 		  VGA_CLK,
+	output 		  VGA_BLANK_N,
+	output 		  VGA_SYNC_N,
 
 	/////////// AUDIO //////////
 	output		  AUDIO_L,
 	output		  AUDIO_R,
 	output		  AUDIO_SPDIF,
 
+	////// DE1-SoC AUDIO ///////
+	inout         AUD_ADCLRCK,  // Audio CODEC ADC LR Clock
+	input         AUD_ADCDAT,   // Audio CODEC ADC Data
+	inout         AUD_DACLRCK,  // Audio CODEC DAC LR Clock
+	output        AUD_DACDAT,   // Audio CODEC DAC Data
+   inout         AUD_BCLK,     // Audio CODEC Bit-Stream Clock
+   output        AUD_XCK,      // Audio CODEC Chip Clock
+   inout         AUD_I2C_SDAT, // I2C Data
+   output        AUD_I2C_SCLK, // I2C Clock
+		
 	//////////// SDIO ///////////
 	inout   [3:0] SDIO_DAT,
 	inout         SDIO_CMD,
@@ -102,8 +117,8 @@ module sys_top
 	output        SD_SPI_MOSI,
 
 	inout         SDCD_SPDIF,
-	output        IO_SCL,
-	inout         IO_SDA,
+//	output        IO_SCL,
+//	inout         IO_SDA,
 
 	////////// ADC //////////////
 	output        ADC_SCK,
@@ -123,6 +138,24 @@ module sys_top
 	///////// USER IO ///////////
 	inout   [6:0] USER_IO
 );
+
+wire VGA_EN = 1'b0;		// enable VGA mode when VGA_EN is low
+
+`ifndef HDMI_ENABLE
+	wire HDMI_I2C_SCL;
+	wire HDMI_I2C_SDA;
+	wire HDMI_MCLK;
+	wire HDMI_SCLK;
+	wire HDMI_LRCLK;
+	wire HDMI_I2S;
+	wire HDMI_TX_CLK;
+	wire HDMI_TX_DE;
+	wire [23:0] HDMI_TX_D;
+	wire HDMI_TX_HS;
+	wire HDMI_TX_VS;
+	wire HDMI_TX_INT = 1'b0;
+`endif
+
 
 //////////////////////  Secondary SD  ///////////////////////////////////
 
@@ -163,19 +196,20 @@ wire btn_r, btn_o, btn_u;
 	assign {btn_r,btn_o,btn_u} = ~{BTN_RESET,BTN_OSD,BTN_USER} | {mcp_btn[1],mcp_btn[2],mcp_btn[0]};
 `endif
 
-wire [2:0] mcp_btn;
-wire       mcp_sdcd;
-mcp23009 mcp23009
-(
-	.clk(FPGA_CLK2_50),
 
-	.btn(mcp_btn),
-	.led({led_p, led_d, led_u}),
-	.sd_cd(mcp_sdcd),
-
-	.scl(IO_SCL),
-	.sda(IO_SDA)
-);
+wire [2:0] mcp_btn = 3'h0;
+wire       mcp_sdcd = 1'b0;
+//mcp23009 mcp23009
+//(
+//	.clk(FPGA_CLK2_50),
+//
+//	.btn(mcp_btn),
+//	.led({led_p, led_d, led_u}),
+//	.sd_cd(mcp_sdcd),
+//
+//	.scl(IO_SCL),
+//	.sda(IO_SDA)
+//);
 
 
 reg btn_user, btn_osd;
@@ -855,6 +889,7 @@ cyclonev_clkselect hdmi_clk_sw
 	.outclk(hdmi_tx_clk)
 );
 
+`ifndef HDMI_ENABLE
 altddio_out
 #(
 	.extend_oe_disable("OFF"),
@@ -879,6 +914,7 @@ hdmiclk_ddr
 	.sclr(1'b0),
 	.sset(1'b0)
 );
+`endif
 
 reg hdmi_out_hs;
 reg hdmi_out_vs;
@@ -968,9 +1004,14 @@ csync csync_vga(clk_vid, vga_hs_osd, vga_vs_osd, vga_cs_osd);
 
 	assign VGA_VS = (VGA_EN | SW[3]) ? 1'bZ      : csync_en ? 1'b1 : ~vs1;
 	assign VGA_HS = (VGA_EN | SW[3]) ? 1'bZ      : csync_en ? ~cs1 : ~hs1;
-	assign VGA_R  = (VGA_EN | SW[3]) ? 6'bZZZZZZ : vga_o[23:18];
-	assign VGA_G  = (VGA_EN | SW[3]) ? 6'bZZZZZZ : vga_o[15:10];
-	assign VGA_B  = (VGA_EN | SW[3]) ? 6'bZZZZZZ : vga_o[7:2];
+	assign VGA_R  = (VGA_EN | SW[3]) ? 8'bZZZZZZZZ : vga_o[23:16];
+	assign VGA_G  = (VGA_EN | SW[3]) ? 8'bZZZZZZZZ : vga_o[15:8];
+	assign VGA_B  = (VGA_EN | SW[3]) ? 8'bZZZZZZZZ : vga_o[7:0];
+
+	assign VGA_BLANK_N = VGA_HS && VGA_VS; // VGA DAC additional required pin
+	assign VGA_SYNC_N = 0; 						// VGA DAC additional required pin
+	assign VGA_CLK = hdmi_tx_clk; 			// has to define a clock to VGA DAC clock otherwise the picture is noisy
+
 `endif
 
 /////////////////////////  Audio output  ////////////////////////////////
@@ -1067,6 +1108,30 @@ alsa alsa
 	.pcm_l(alsa_l),
 	.pcm_r(alsa_r)
 );
+
+
+//// DE10-SoC audio codec i2c ////
+wire exchan = 1'b0;
+wire mix = 1'b0;
+
+audio_top audio_top (
+  .clk          (clk_audio),  // input clock
+  .rst_n        (1'b1),		   // active low reset (from reset button)
+  // config
+  .exchan       (exchan),		// switch audio left / right channel
+  .mix          (mix),			// normal / centered mix (play some left channel on the right channel and vise-versa)
+  // audio shifter
+  .rdata        (audio_r),	// right channel sample data
+  .ldata        (audio_l),	// left channel sample data
+  .aud_bclk     (AUD_BCLK),	// CODEC data clock
+  .aud_daclrck  (AUD_DACLRCK),// CODEC data clock
+  .aud_dacdat   (AUD_DACDAT),	// CODEC data
+  .aud_xck      (AUD_XCK),  	// CODEC data clock
+  // I2C audio config
+  .i2c_sclk     (AUD_I2C_SCLK),  // CODEC config clock
+  .i2c_sdat     (AUD_I2C_SDAT)   // CODEC config data
+);
+
 
 
 ////////////////  User I/O (USB 3.0 connector) /////////////////////////
