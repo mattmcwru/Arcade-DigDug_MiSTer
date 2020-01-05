@@ -144,15 +144,15 @@ wire VGA_EN = 1'b0;		// enable VGA mode when VGA_EN is low
 `ifndef HDMI_ENABLE
 	wire HDMI_I2C_SCL;
 	wire HDMI_I2C_SDA;
-	wire HDMI_MCLK;
+//	wire HDMI_MCLK;
 	wire HDMI_SCLK;
 	wire HDMI_LRCLK;
 	wire HDMI_I2S;
 	wire HDMI_TX_CLK;
-	wire HDMI_TX_DE;
-	wire [23:0] HDMI_TX_D;
-	wire HDMI_TX_HS;
-	wire HDMI_TX_VS;
+//	wire HDMI_TX_DE;
+//	wire [23:0] HDMI_TX_D;
+//	wire HDMI_TX_HS;
+//	wire HDMI_TX_VS;
 	wire HDMI_TX_INT = 1'b0;
 `endif
 
@@ -181,9 +181,9 @@ wire led_u = ~led_user;
 wire led_locked;
 
 `ifndef DUAL_SDRAM
-	assign LED_POWER = (SW[3] | led_p) ? 1'bZ : 1'b0;
-	assign LED_HDD   = (SW[3] | led_d) ? 1'bZ : 1'b0;
-	assign LED_USER  = (SW[3] | led_u) ? 1'bZ : 1'b0;
+	assign LED_POWER = (~SW[3] | led_p) ? 1'bZ : 1'b0;
+	assign LED_HDD   = (~SW[3] | led_d) ? 1'bZ : 1'b0;
+	assign LED_USER  = (~SW[3] | led_u) ? 1'bZ : 1'b0;
 `endif
 
 //LEDs on main board
@@ -237,7 +237,7 @@ end
 
 // gp_in[31] = 0 - quick flag that FPGA is initialized (HPS reads 1 when FPGA is not in user mode)
 //                 used to avoid lockups while JTAG loading
-wire [31:0] gp_in = {1'b0, btn_user, btn_osd, SW[3], 8'd0, io_ver, io_ack, io_wide, io_dout};
+wire [31:0] gp_in = {1'b0, btn_user, btn_osd, ~SW[3], 8'd0, io_ver, io_ack, io_wide, io_dout};
 wire [31:0] gp_out;
 
 wire  [1:0] io_ver    = 1; // 0 - standard MiST I/O (for quick porting of complex MiST cores). 1 - optimized HPS I/O. 2,3 - reserved for future.
@@ -936,10 +936,13 @@ always @(posedge hdmi_tx_clk) begin
 	hdmi_out_d  <= d;
 end
 
+`ifdef HDMI_ENABLE
+assign HDMI_MCLK = 1'b0;
 assign HDMI_TX_HS = hdmi_out_hs;
 assign HDMI_TX_VS = hdmi_out_vs;
 assign HDMI_TX_DE = hdmi_out_de;
 assign HDMI_TX_D  = hdmi_out_d;
+`endif
 
 /////////////////////////  VGA output  //////////////////////////////////
 
@@ -1002,11 +1005,11 @@ csync csync_vga(clk_vid, vga_hs_osd, vga_vs_osd, vga_cs_osd);
 	wire hs1 = vga_scaler ? hdmi_hs_osd : vga_hs_osd;
 	wire cs1 = vga_scaler ? hdmi_cs_osd : vga_cs_osd;
 
-	assign VGA_VS = (VGA_EN | SW[3]) ? 1'bZ      : csync_en ? 1'b1 : ~vs1;
-	assign VGA_HS = (VGA_EN | SW[3]) ? 1'bZ      : csync_en ? ~cs1 : ~hs1;
-	assign VGA_R  = (VGA_EN | SW[3]) ? 8'bZZZZZZZZ : vga_o[23:16];
-	assign VGA_G  = (VGA_EN | SW[3]) ? 8'bZZZZZZZZ : vga_o[15:8];
-	assign VGA_B  = (VGA_EN | SW[3]) ? 8'bZZZZZZZZ : vga_o[7:0];
+	assign VGA_VS = (VGA_EN | ~SW[3]) ? 1'bZ      : csync_en ? 1'b1 : ~vs1;
+	assign VGA_HS = (VGA_EN | ~SW[3]) ? 1'bZ      : csync_en ? ~cs1 : ~hs1;
+	assign VGA_R  = (VGA_EN | ~SW[3]) ? 8'bZZZZZZZZ : vga_o[23:16];
+	assign VGA_G  = (VGA_EN | ~SW[3]) ? 8'bZZZZZZZZ : vga_o[15:8];
+	assign VGA_B  = (VGA_EN | ~SW[3]) ? 8'bZZZZZZZZ : vga_o[7:0];
 
 	assign VGA_BLANK_N = VGA_HS && VGA_VS; // VGA DAC additional required pin
 	assign VGA_SYNC_N = 0; 						// VGA DAC additional required pin
@@ -1016,17 +1019,16 @@ csync csync_vga(clk_vid, vga_hs_osd, vga_vs_osd, vga_cs_osd);
 
 /////////////////////////  Audio output  ////////////////////////////////
 
-assign SDCD_SPDIF =(SW[3] & ~spdif) ? 1'b0 : 1'bZ;
+assign SDCD_SPDIF =(~SW[3] & ~spdif) ? 1'b0 : 1'bZ;
 
 `ifndef DUAL_SDRAM
 	wire anl,anr;
 
-	assign AUDIO_SPDIF = SW[3] ? 1'bZ : SW[0] ? HDMI_LRCLK : spdif;
-	assign AUDIO_R     = SW[3] ? 1'bZ : SW[0] ? HDMI_I2S   : anr;
-	assign AUDIO_L     = SW[3] ? 1'bZ : SW[0] ? HDMI_SCLK  : anl;
+	assign AUDIO_SPDIF = ~SW[3] ? 1'bZ : ~SW[0] ? HDMI_LRCLK : spdif;
+	assign AUDIO_R     = ~SW[3] ? 1'bZ : ~SW[0] ? HDMI_I2S   : anr;
+	assign AUDIO_L     = ~SW[3] ? 1'bZ : ~SW[0] ? HDMI_SCLK  : anl;
 `endif
 
-assign HDMI_MCLK = 0;
 
 wire [15:0] audio_l, audio_l_pre;
 aud_mix_top audmix_l
@@ -1138,18 +1140,18 @@ audio_top audio_top (
 
 assign USER_IO[0] =                       !user_out[0]  ? 1'b0 : 1'bZ;
 assign USER_IO[1] =                       !user_out[1]  ? 1'b0 : 1'bZ;
-assign USER_IO[2] = !(SW[1] ? HDMI_I2S   : user_out[2]) ? 1'b0 : 1'bZ;
+assign USER_IO[2] = !(~SW[1] ? HDMI_I2S   : user_out[2]) ? 1'b0 : 1'bZ;
 assign USER_IO[3] =                       !user_out[3]  ? 1'b0 : 1'bZ;
-assign USER_IO[4] = !(SW[1] ? HDMI_SCLK  : user_out[4]) ? 1'b0 : 1'bZ;
-assign USER_IO[5] = !(SW[1] ? HDMI_LRCLK : user_out[5]) ? 1'b0 : 1'bZ;
+assign USER_IO[4] = !(~SW[1] ? HDMI_SCLK  : user_out[4]) ? 1'b0 : 1'bZ;
+assign USER_IO[5] = !(~SW[1] ? HDMI_LRCLK : user_out[5]) ? 1'b0 : 1'bZ;
 assign USER_IO[6] =                       !user_out[6]  ? 1'b0 : 1'bZ;
 
 assign user_in[0] =         USER_IO[0];
 assign user_in[1] =         USER_IO[1];
-assign user_in[2] = SW[1] | USER_IO[2];
+assign user_in[2] = ~SW[1] | USER_IO[2];
 assign user_in[3] =         USER_IO[3];
-assign user_in[4] = SW[1] | USER_IO[4];
-assign user_in[5] = SW[1] | USER_IO[5];
+assign user_in[4] = ~SW[1] | USER_IO[4];
+assign user_in[5] = ~SW[1] | USER_IO[5];
 assign user_in[6] =         USER_IO[6];
 
 
